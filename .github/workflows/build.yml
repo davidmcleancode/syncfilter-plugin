@@ -24,6 +24,10 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel 2
 
+        - name: Ad-hoc code sign (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --force --deep -s - build/SyncFilter_artefacts/Release/VST3/SyncFilter.vst3
+
       - name: Upload VST3 (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
