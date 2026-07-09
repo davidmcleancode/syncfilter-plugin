@@ -19,7 +19,8 @@ FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(SyncFilter
     COMPANY_NAME "David Test Plugin"
-    PLUGIN_MANUFACTURER_CODE Ycmp
+   BUNDLE_ID "com.davidtestplugin.syncfilter"
+   PLUGIN_MANUFACTURER_CODE Ycmp
     PLUGIN_CODE Sync
     FORMATS VST3
     PRODUCT_NAME "SyncFilter"
