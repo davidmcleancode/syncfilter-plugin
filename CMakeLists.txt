@@ -4,6 +4,9 @@ project(SyncFilter VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if (APPLE)
+       set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for macOS" FORCE)
+   endif()
 
 include(FetchContent)
 FetchContent_Declare(
