@@ -15,7 +15,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(SyncFilter
-    COMPANY_NAME "YourCompany"
+    COMPANY_NAME "David Test Plugin"
     PLUGIN_MANUFACTURER_CODE Ycmp
     PLUGIN_CODE Sync
     FORMATS VST3
