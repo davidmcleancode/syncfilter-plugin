@@ -115,10 +115,9 @@ void CurveEditor::mouseDown (const juce::MouseEvent& e)
 
     dragMode = DragMode::node;
     dragIndex = idx;
+    pushToProcessor();
     repaint();
-}
-
-void CurveEditor::mouseDrag (const juce::MouseEvent& e)
+}void CurveEditor::mouseDrag (const juce::MouseEvent& e)
 {
     auto norm = toNorm (e.position);
 
@@ -132,20 +131,20 @@ void CurveEditor::mouseDrag (const juce::MouseEvent& e)
             float maxX = points[(size_t) dragIndex + 1].x - 0.01f;
             points[(size_t) dragIndex].x = juce::jlimit (minX, maxX, norm.x);
         }
+        pushToProcessor();
         repaint();
     }
     else if (dragMode == DragMode::segment && curveDragSegment >= 0 && curveDragSegment < (int) points.size())
     {
         float delta = (norm.y - curveDragStartNormY) * 2.5f;
         points[(size_t) curveDragSegment].curve = juce::jlimit (-1.0f, 1.0f, curveDragStartValue + delta);
+        pushToProcessor();
         repaint();
     }
 }
 
 void CurveEditor::mouseUp (const juce::MouseEvent&)
 {
-    if (dragMode != DragMode::none)
-        pushToProcessor();
     dragMode = DragMode::none;
     dragIndex = -1;
     curveDragSegment = -1;
