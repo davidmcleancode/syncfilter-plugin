@@ -135,4 +135,142 @@ void SyncFilterAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     {
         if (auto position = playHead->getPosition())
         {
-            if (auto hostBpm =
+            if (auto hostBpm = position->getBpm())
+                bpm = *hostBpm;
+            isPlaying = position->getIsPlaying();
+        }
+    }
+    hostIsPlaying.store (isPlaying, std::memory_order_relaxed);
+
+    static const float rateMultipliers[] = { 1.0f, 2.0f, 4.0f, 8.0f, 16.0f, 32.0f };
+    const int rateIndex = juce::jlimit (0, 5, (int) apvts.getRawParameterValue ("rate")->load());
+    const double freq = (bpm / 240.0) * (double) rateMultipliers[rateIndex];
+    const double phaseInc = freq / currentSampleRate;
+
+    const int targetIndex   = (int) apvts.getRawParameterValue ("target")->load();
+    const float depth       = apvts.getRawParameterValue ("depth")->load() / 100.0f;
+    const float baseCutoff  = apvts.getRawParameterValue ("cutoff")->load();
+    const float resonance   = apvts.getRawParameterValue ("resonance")->load();
+    const int filterTypeIdx = (int) apvts.getRawParameterValue ("filterType")->load();
+
+    const int controlRate = 32; // recompute filter coefficients every N samples
+    int samplesSinceUpdate = controlRate;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float raw    = lookup ((float) phase);
+        const float shaped = juce::jlimit (-1.0f, 1.0f, raw * 2.0f - 1.0f) * depth;
+
+        float modulatedCutoff = baseCutoff;
+        float tremGain = 1.0f;
+        float pan = 0.0f;
+
+        if (targetIndex == 0)
+            modulatedCutoff = juce::jlimit (20.0f, (float) (currentSampleRate * 0.45), baseCutoff + shaped * 6000.0f);
+        else if (targetIndex == 1)
+            tremGain = juce::jlimit (0.0f, 1.5f, 1.0f + shaped * 0.5f);
+        else if (targetIndex == 2)
+            pan = shaped;
+
+        if (samplesSinceUpdate >= controlRate)
+        {
+            juce::dsp::IIR::Coefficients<float>::Ptr coeffs;
+            switch (filterTypeIdx)
+            {
+                case 0:  coeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass  (currentSampleRate, modulatedCutoff, resonance); break;
+                case 1:  coeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass (currentSampleRate, modulatedCutoff, resonance); break;
+                case 2:  coeffs = juce::dsp::IIR::Coefficients<float>::makeBandPass (currentSampleRate, modulatedCutoff, resonance); break;
+                default: coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch    (currentSampleRate, modulatedCutoff, resonance); break;
+            }
+            *filterL.coefficients = *coeffs;
+            *filterR.coefficients = *coeffs;
+            samplesSinceUpdate = 0;
+        }
+        ++samplesSinceUpdate;
+
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float x = buffer.getReadPointer (ch)[i];
+            float y = (ch == 0) ? filterL.processSample (x) : filterR.processSample (x);
+            y *= tremGain;
+
+            if (numChannels == 2)
+            {
+                float panGain = (ch == 0) ? juce::jmin (1.0f, 1.0f - pan) : juce::jmin (1.0f, 1.0f + pan);
+                y *= panGain;
+            }
+
+            buffer.getWritePointer (ch)[i] = y;
+        }
+
+        phase += phaseInc;
+        if (phase >= 1.0)
+            phase -= 1.0;
+    }
+
+    phaseForUI.store ((float) phase, std::memory_order_relaxed);
+
+    buffer.applyGain (outGain);
+}
+
+void SyncFilterAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    auto state = apvts.copyState();
+
+    juce::ValueTree curveTree ("CURVE");
+    {
+        const juce::ScopedLock sl (pointsLock);
+        for (auto& p : curvePoints)
+        {
+            juce::ValueTree node ("POINT");
+            node.setProperty ("x", p.x, nullptr);
+            node.setProperty ("y", p.y, nullptr);
+            node.setProperty ("curve", p.curve, nullptr);
+            curveTree.addChild (node, -1, nullptr);
+        }
+    }
+    state.addChild (curveTree, -1, nullptr);
+
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    copyXmlToBinary (*xml, destData);
+}
+
+void SyncFilterAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
+    if (xml == nullptr)
+        return;
+
+    auto state = juce::ValueTree::fromXml (*xml);
+    if (! state.isValid())
+        return;
+
+    apvts.replaceState (state);
+
+    auto curveTree = state.getChildWithName ("CURVE");
+    if (curveTree.isValid())
+    {
+        std::vector<CurveNode> pts;
+        for (int i = 0; i < curveTree.getNumChildren(); ++i)
+        {
+            auto node = curveTree.getChild (i);
+            CurveNode n;
+            n.x = (float) node.getProperty ("x");
+            n.y = (float) node.getProperty ("y");
+            n.curve = node.hasProperty ("curve") ? (float) node.getProperty ("curve") : 0.0f;
+            pts.push_back (n);
+        }
+        if (pts.size() >= 2)
+            setCurvePoints (pts);
+    }
+}
+
+juce::AudioProcessorEditor* SyncFilterAudioProcessor::createEditor()
+{
+    return new SyncFilterAudioProcessorEditor (*this);
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new SyncFilterAudioProcessor();
+}
